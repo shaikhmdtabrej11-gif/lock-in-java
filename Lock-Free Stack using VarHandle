@@ -1,0 +1,74 @@
+
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.VarHandle;
+
+public class LockFreeVarHandleStack<T> {
+
+    private static class Node<T> {
+        final T value;
+        Node<T> next;
+
+        Node(T value) {
+            this.value = value;
+        }
+    }
+
+    private volatile Node<T> head;
+
+    private static final VarHandle HEAD;
+
+    static {
+        try {
+            HEAD = MethodHandles.lookup()
+                    .findVarHandle(
+                        LockFreeVarHandleStack.class,
+                        "head",
+                        Node.class
+                    );
+        } catch (Exception e) {
+            throw new ExceptionInInitializerError(e);
+        }
+    }
+
+    public void push(T value) {
+        Node<T> newNode = new Node<>(value);
+
+        do {
+            newNode.next = (Node<T>) HEAD.getVolatile(this);
+
+        } while (!HEAD.compareAndSet(
+                this, newNode.next, newNode));
+    }
+
+    public T pop() {
+        while (true) {
+            Node<T> current =
+                    (Node<T>) HEAD.getVolatile(this);
+
+            if (current == null) {
+                return null;
+            }
+
+            Node<T> next = current.next;
+
+            if (HEAD.compareAndSet(
+                    this, current, next)) {
+                return current.value;
+            }
+        }
+    }
+
+    public static void main(String[] args) {
+
+        LockFreeVarHandleStack<Integer> stack =
+                new LockFreeVarHandleStack<>();
+
+        stack.push(100);
+        stack.push(200);
+        stack.push(300);
+
+        System.out.println(stack.pop());
+        System.out.println(stack.pop());
+        System.out.println(stack.pop());
+    }
+}
